@@ -10,40 +10,78 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 public class TwitchClient {
-    ObjectMapper objectMapper = new ObjectMapper();
-    private List<String> getTwitchConfig() {
-        String id = System.getenv("LIVESCRIBE_ID");
-        String secret = System.getenv("LIVESCRIBE_SECRET");
-        return List.of(id, secret);
-    };
+    final ObjectMapper objectMapper = new ObjectMapper();
+    final HttpClient client = HttpClient.newHttpClient();
 
-    public String getAuthToken() throws IOException, InterruptedException {
+    private String getTwitchId() {
+        String value = System.getenv("LIVESCRIBE_ID");
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Environment variable LIVESCRIBE_ID is missing or blank.");
+        }
+        return value;
+    }
+
+    private String getTwitchSecret() {
+        String value = System.getenv("LIVESCRIBE_SECRET");
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Environment variable LIVESCRIBE_SECRET is missing or blank.");
+        }
+        return value;
+    }
+
+    private String getAuthToken() throws IOException, InterruptedException {
         URI tokenUri = URI.create("https://id.twitch.tv/oauth2/token");
-        String headerName = "Content-Type";
-        String headerBody = "application/x-www-form-urlencoded";
         String grantType = "client_credentials";
 
-        List<String> config = getTwitchConfig();
+        String twitchId = getTwitchId();
+        String twitchSecret = getTwitchSecret();
+
         String requestBody =
-                "client_id=" + URLEncoder.encode(config.getFirst(), StandardCharsets.UTF_8)
-                + "&client_secret=" + URLEncoder.encode(config.getLast(), StandardCharsets.UTF_8)
+                "client_id=" + URLEncoder.encode(twitchId, StandardCharsets.UTF_8)
+                + "&client_secret=" + URLEncoder.encode(twitchSecret, StandardCharsets.UTF_8)
                 + "&grant_type=" + URLEncoder.encode(grantType, StandardCharsets.UTF_8);
 
-        HttpResponse<String> response;
-        try (HttpClient client = HttpClient.newHttpClient()) {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(tokenUri)
-                    .header(headerName, headerBody)
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .build();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(tokenUri)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
 
-            response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new IOException("Failed to get Twitch auth token. HTTP " + response.statusCode() + ": " + response.body());
         }
 
         JsonNode json = objectMapper.readTree(response.body());
-        return json.get("access_token").asString();
+        JsonNode accessTokenNode = json.get("access_token");
+
+        if (accessTokenNode == null || accessTokenNode.asString().isBlank()) {
+            throw new IOException("Twitch token response did not contain a valid access_token: " + response.body());
+        }
+
+        return accessTokenNode.asString();
+    }
+
+    public HttpResponse<String> isLive(String stream) throws IOException, InterruptedException {
+        URI streamUri = URI.create("https://api.twitch.tv/helix/streams?user_login=" +
+                URLEncoder.encode(stream, StandardCharsets.UTF_8));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(streamUri)
+                .header("Authorization", "Bearer " + getAuthToken())
+                .header("Client-Id", getTwitchId())
+                .GET()
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new IOException("Failed to query Twitch stream status. HTTP " + response.statusCode() + ": " + response.body());
+        }
+
+        return response;
     }
 }
