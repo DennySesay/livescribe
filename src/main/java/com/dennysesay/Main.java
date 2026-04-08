@@ -7,10 +7,19 @@ import java.net.http.HttpResponse;
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class Main {
     public static void main(String[] args) throws IOException, InterruptedException {
+        String streamer = "fuslie";
         TwitchClient client = new TwitchClient();
-        HttpResponse<String> response = client.isLive("zhuvely95");
+        StreamlinkResolver resolver = new StreamlinkResolver();
+        boolean response = client.isLive(streamer);
 
-        System.out.println("HTTP " + response.statusCode());
-        System.out.println(response.body());
+        if (response) {
+            System.out.println(streamer + " is live proceeding with download");
+            resolver.resolve(streamer, streamer + "test");
+        } else {
+            System.out.println("streamer is not live try again later");
+        }
+
+//        while (true) {
+//        }
     }
 }

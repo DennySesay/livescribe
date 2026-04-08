@@ -65,7 +65,7 @@ public class TwitchClient {
         return accessTokenNode.asString();
     }
 
-    public HttpResponse<String> isLive(String stream) throws IOException, InterruptedException {
+    public boolean isLive(String stream) throws IOException, InterruptedException {
         URI streamUri = URI.create("https://api.twitch.tv/helix/streams?user_login=" +
                 URLEncoder.encode(stream, StandardCharsets.UTF_8));
 
@@ -78,10 +78,18 @@ public class TwitchClient {
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
+        JsonNode json = objectMapper.readTree(response.body());
+        JsonNode dataNode = json.get("data");
+
+        if (dataNode == null || dataNode.toString().equals("[]")) {
+            System.out.println("stream is not live");
+            return false;
+        }
+
         if (response.statusCode() != 200) {
             throw new IOException("Failed to query Twitch stream status. HTTP " + response.statusCode() + ": " + response.body());
         }
 
-        return response;
+        return true;
     }
 }
