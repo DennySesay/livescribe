@@ -1,25 +1,70 @@
 package com.dennysesay;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.List;
 
 public class StreamlinkResolver {
-    public void resolve(String streamer, String filename) {
+    private final String streamer;
+    private final String filename;
+
+    public StreamlinkResolver(String streamer, String filename) {
+        this.streamer = streamer;
+        this.filename = filename;
+    }
+
+    private int runCommand(List<String> command) {
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectErrorStream(true);
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder("streamlink", "twitch.tv/", streamer, "best", "-o", filename + ".ts");
             Process process = processBuilder.start();
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                System.out.println(line);
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.println(line);
+                }
             }
 
             int exitCode = process.waitFor();
-            System.out.println("\n Exited with code: " + exitCode);
-        } catch (Exception e) {
-            e.printStackTrace();
+            System.out.println("\nExited with code: " + exitCode);
+            return exitCode;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Process was interrupted", e);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to start process: " + String.join(" ", command), e);
         }
+    }
+
+    public void resolve() {
+        int exitCode = runCommand(List.of(
+                "streamlink",
+                "twitch.tv/" + streamer,
+                "best",
+                "-o",
+                filename + ".ts"
+        ));
+        if (exitCode == 0) {
+            convertToMp4();
+        }
+    }
+
+    public void convertToMp4() {
+        int exitCode = runCommand(List.of(
+                "ffmpeg",
+                "-err_detect", "ignore_err",
+                "-i", filename + ".ts",
+                "-c", "copy",
+                filename + ".mp4"
+        ));
+
+        System.out.println("\nExited with code: " + exitCode);
+    }
+
+    public void deleteTsFile() {
+        // implement deletion if desired after successful conversion
+        // Files.deleteIfExists(Path.of(filename + ".ts"));
     }
 }

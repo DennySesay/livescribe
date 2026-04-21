@@ -16,17 +16,17 @@ public class TwitchClient {
     final HttpClient client = HttpClient.newHttpClient();
 
     private String getTwitchId() {
-        String value = System.getenv("LIVESCRIBE_ID");
+        String value = System.getenv("LIVESCRIBE_TWITCH_ID");
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Environment variable LIVESCRIBE_ID is missing or blank.");
+            throw new IllegalStateException("Environment variable LIVESCRIBE_TWITCH_ID is missing or blank.");
         }
         return value;
     }
 
     private String getTwitchSecret() {
-        String value = System.getenv("LIVESCRIBE_SECRET");
+        String value = System.getenv("LIVESCRIBE_TWITCH_SECRET");
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Environment variable LIVESCRIBE_SECRET is missing or blank.");
+            throw new IllegalStateException("Environment variable LIVESCRIBE_TWITCH_SECRET is missing or blank.");
         }
         return value;
     }
@@ -78,16 +78,16 @@ public class TwitchClient {
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
+        if (response.statusCode() != 200) {
+            throw new IOException("Failed to query Twitch stream status. HTTP " + response.statusCode() + ": " + response.body());
+        }
+
         JsonNode json = objectMapper.readTree(response.body());
         JsonNode dataNode = json.get("data");
 
-        if (dataNode == null || dataNode.toString().equals("[]")) {
+        if (dataNode == null || !dataNode.isArray() || dataNode.isEmpty()) {
             System.out.println("stream is not live");
             return false;
-        }
-
-        if (response.statusCode() != 200) {
-            throw new IOException("Failed to query Twitch stream status. HTTP " + response.statusCode() + ": " + response.body());
         }
 
         return true;
