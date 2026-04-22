@@ -1,4 +1,10 @@
-package com.dennysesay;
+package com.dennysesay.app;
+
+import com.dennysesay.config.ConfigReader;
+import com.dennysesay.config.Secrets;
+import com.dennysesay.provider.StreamingClient;
+import com.dennysesay.provider.twitch.TwitchClient;
+import com.dennysesay.scribe.StreamlinkResolver;
 
 import java.io.IOException;
 
@@ -6,8 +12,13 @@ import java.io.IOException;
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class Main {
     public static void main(String[] args) throws IOException, InterruptedException {
+        ConfigReader config = new ConfigReader();
         String streamer = "fuslie";
-        TwitchClient client = new TwitchClient();
+
+        String clientId = Secrets.twitchClientId(config);
+        String clientSecret = Secrets.twitchClientSecret(config);
+
+        StreamingClient client = new TwitchClient(clientId, clientSecret);
         StreamlinkResolver resolver = new StreamlinkResolver(streamer, streamer + "test");
         boolean response = client.isLive(streamer);
 

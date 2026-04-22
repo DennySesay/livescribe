@@ -1,4 +1,4 @@
-package com.dennysesay;
+package com.dennysesay.provider.twitch;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -11,32 +11,23 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 
-public class TwitchClient {
+import com.dennysesay.provider.StreamingClient;
+
+public class TwitchClient implements StreamingClient {
+    String twitchId;
+    String twitchSecret;
+
     final ObjectMapper objectMapper = new ObjectMapper();
     final HttpClient client = HttpClient.newHttpClient();
 
-    private String getTwitchId() {
-        String value = System.getenv("LIVESCRIBE_TWITCH_ID");
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Environment variable LIVESCRIBE_TWITCH_ID is missing or blank.");
-        }
-        return value;
-    }
-
-    private String getTwitchSecret() {
-        String value = System.getenv("LIVESCRIBE_TWITCH_SECRET");
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Environment variable LIVESCRIBE_TWITCH_SECRET is missing or blank.");
-        }
-        return value;
+    public TwitchClient(String twitchId, String twitchSecret) {
+        this.twitchId = twitchId;
+        this.twitchSecret = twitchSecret;
     }
 
     private String getAuthToken() throws IOException, InterruptedException {
         URI tokenUri = URI.create("https://id.twitch.tv/oauth2/token");
         String grantType = "client_credentials";
-
-        String twitchId = getTwitchId();
-        String twitchSecret = getTwitchSecret();
 
         String requestBody =
                 "client_id=" + URLEncoder.encode(twitchId, StandardCharsets.UTF_8)
@@ -65,6 +56,7 @@ public class TwitchClient {
         return accessTokenNode.asString();
     }
 
+    @Override
     public boolean isLive(String stream) throws IOException, InterruptedException {
         URI streamUri = URI.create("https://api.twitch.tv/helix/streams?user_login=" +
                 URLEncoder.encode(stream, StandardCharsets.UTF_8));
@@ -72,7 +64,7 @@ public class TwitchClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(streamUri)
                 .header("Authorization", "Bearer " + getAuthToken())
-                .header("Client-Id", getTwitchId())
+                .header("Client-Id", twitchId)
                 .GET()
                 .build();
 
