@@ -11,9 +11,18 @@ public class StreamerConfig {
     String clientSecret = Secrets.twitchClientSecret(config);
 
     String streamers = config.get("streamers");
-    List<String> streamerList = Arrays.stream(streamers.split(","))
+    List<StreamerDefinition> streamerList = Arrays.stream(streamers.split(","))
             .map(String::trim)
-            .map(streamer -> Arrays.toString(streamer.split(":")))
+            .map(streamer -> {
+                String[] parts = streamer.split(":");
+                String provider = parts[0];
+                String channel = parts[1];
+                String path = config.getOrDefault(
+                        "scribe.output.path." + provider,
+                        config.getOrDefault("scribe.output.path", "./scribe")
+                );
+                return new StreamerDefinition(provider, channel, path);
+            })
             .collect(Collectors.toList());
 
     public void streamerListConverter() {
