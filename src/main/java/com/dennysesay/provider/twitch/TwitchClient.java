@@ -1,5 +1,6 @@
 package com.dennysesay.provider.twitch;
 
+import com.dennysesay.provider.StreamingClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -11,8 +12,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 
-import com.dennysesay.provider.StreamingClient;
-
 public class TwitchClient implements StreamingClient {
     String twitchId;
     String twitchSecret;
@@ -23,6 +22,11 @@ public class TwitchClient implements StreamingClient {
     public TwitchClient(String twitchId, String twitchSecret) {
         this.twitchId = twitchId;
         this.twitchSecret = twitchSecret;
+    }
+
+    @Override
+    public String createUrl(String channel) {
+        return "https://twitch.tv/";
     }
 
     private String getAuthToken() throws IOException, InterruptedException {

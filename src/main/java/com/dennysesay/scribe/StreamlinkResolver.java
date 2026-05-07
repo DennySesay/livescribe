@@ -6,12 +6,11 @@ import java.io.InputStreamReader;
 import java.util.List;
 
 public class StreamlinkResolver {
-    private final String streamer;
-    private final String filename;
+    private final String streamUrl;
+    private String filename;
 
-    public StreamlinkResolver(String streamer, String filename) {
-        this.streamer = streamer;
-        this.filename = filename;
+    public StreamlinkResolver(String streamUrl) {
+        this.streamUrl = streamUrl;
     }
 
     private int runCommand(List<String> command) {
@@ -41,7 +40,7 @@ public class StreamlinkResolver {
     public void resolve() {
         int exitCode = runCommand(List.of(
                 "streamlink",
-                "twitch.tv/" + streamer,
+                streamUrl,
                 "best",
                 "-o",
                 filename + ".ts"
