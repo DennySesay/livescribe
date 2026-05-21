@@ -1,47 +1,132 @@
-# Live Stream Auto-Recorder (Early Stage)
+# Livescribe
 
-This project is a small Java-based utility that monitors creators on supported streaming platforms and automatically starts a local recording when they go live. It’s currently in active development; configuration, packaging, and documentation are still being finalized.
+A Java CLI tool that monitors streaming channels and automatically starts
+recording when a streamer goes live.
 
-## What it does (in short)
-- Periodically checks if a specified streamer is live.
-- When a stream starts, it triggers a single recording job and avoids duplicate downloads.
-- Shuts down gracefully and logs basic progress.
+![Java](https://img.shields.io/badge/Java-21%2B-orange)
+![Maven](https://img.shields.io/badge/Build-Maven-blue)
+![Status](https://img.shields.io/badge/Status-Alpha-yellow)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## Status
-- Early alpha.
-- Configuration format and defaults are not finalized.
-- Expect breaking changes.
+---
 
-## Prerequisites
-- Java 24 (JDK).
-- Platform API credentials (e.g., for Twitch).
-- An external recording/downloading tool available on your system (for example, a CLI recorder such as streamlink).
+## Features
 
-## Quick start (high level)
-1. Clone the repository.
-2. Provide your platform credentials and basic settings (streamer name, polling interval, output location) via your preferred local configuration method. Exact keys/format will be documented once finalized.
-3. Build and run the application using your preferred Java build tool.
-4. Ensure your external recorder is installed and on your PATH.
+- Automatic live detection via the Twitch Helix API
+- Simultaneous recording of multiple channels
+- Streamlink integration for reliable stream resolution
+- Automatic MP4 conversion after recording via FFmpeg
+- Extensible provider architecture (Twitch now, Kick and YouTube planned)
+- Configuration via `.properties` file and environment variables
 
-Note: Concrete config examples and packaging commands will be added once the configuration schema is settled.
+---
 
-## How it works (high level)
-- A scheduler periodically checks live status on the chosen platform.
-- When a stream is detected, the app hands off recording to a local tool and waits for completion.
-- Only one recording runs at a time to prevent conflicts.
+## Requirements
+
+- Java 21+
+- Maven 3.8+
+- [Streamlink](https://streamlink.github.io/) — `pip install streamlink`
+- [FFmpeg](https://ffmpeg.org/) — for MP4 conversion
+
+---
+
+## Setup
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/DennySesay/livescribe.git
+cd livescribe
+```
+
+### 2. Set environment variables
+
+```bash
+# Linux / Mac
+export LIVESCRIBE_TWITCH_ID=your_client_id
+export LIVESCRIBE_TWITCH_SECRET=your_client_secret
+
+# Windows (PowerShell)
+$env:LIVESCRIBE_TWITCH_ID="your_client_id"
+$env:LIVESCRIBE_TWITCH_SECRET="your_client_secret"
+```
+
+Get your Twitch credentials from the
+[Twitch Developer Portal](https://dev.twitch.tv/console).
+
+### 3. Configure your streamers
+
+Create a `config.properties` in the project root
+(template: `config.example.properties`):
+
+```properties
+streamers=twitch:channelname
+
+scribe.output.path=./scribe
+check.interval.seconds=30
+```
+
+Multiple channels:
+```properties
+streamers=twitch:ludwig, twitch:pokimane, kick:xqc
+
+scribe.output.path.twitch=./scribe/twitch
+scribe.output.path.kick=./scribe/kick
+```
+
+### 4. Build and run
+
+```bash
+mvn clean package
+java -jar target/livescribe-1.0.jar
+```
+
+---
+
+## Output
+
+Recordings are automatically named and saved:
+~/livescribe/
+ludwig-2026-04-09-203000.ts    ← raw stream file
+ludwig-2026-04-09-203000.mp4   ← converted output
+
+---
 
 ## Roadmap
-- Finalize configuration schema and documented defaults.
-- Support multiple platforms and multiple streamers.
-- Improved error handling, retries, and observability (structured logs/metrics).
-- Cross-platform packaging and optional Docker image.
-- Pluggable recording backends and post-processing steps.
+
+- [ ] System tray GUI (JavaFX)
+- [ ] Launch on system startup (Windows / Mac / Linux)
+- [ ] Kick and YouTube provider support
+- [ ] SQLite recording history
+- [ ] Docker image
+
+---
 
 ## Contributing
-Early contributions are welcome. Please open an issue to discuss ideas or report problems.
+
+Contributions are welcome. Please open an issue to discuss changes before
+submitting a pull request.
+
+## Adding a new provider:
+1. Implement `StreamingClient`
+2. Add a case to the provider switch in `StreamerConfig`
+   
+---
 
 ## Security
-Do not commit secrets. Keep credentials in a secure, local-only configuration.
+
+Never commit credentials to the repository. Always provide secrets via
+environment variables. `config.properties` is listed in `.gitignore`.
+
+---
+
+## Disclaimer
+
+This tool is intended for personal use only. Usage is subject to the
+[Twitch Terms of Service](https://www.twitch.tv/p/en/legal/terms-of-service/).
+
+---
 
 ## License
-To be announced.
+
+MIT License — see [LICENSE](LICENSE)
