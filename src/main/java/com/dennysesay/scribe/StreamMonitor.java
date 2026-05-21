@@ -134,7 +134,12 @@ public class StreamMonitor {
         }
 
         String filename = streamerDefinition.streamer();
-        StreamlinkResolver resolver = new StreamlinkResolver(client, streamerDefinition.streamer(), filename);
+        StreamlinkResolver resolver = new StreamlinkResolver(
+                client,
+                streamerDefinition.streamer(),
+                filename,
+                FilenameUtil.defaultBaseDir()
+        );
         activeResolvers.put(streamerDefinition, resolver);
         System.out.println("Starting resolver for " + streamerDefinition);
         try {

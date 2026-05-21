@@ -11,19 +11,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-// TODO: impl link + name
-// TODO: impl folder creation and filename generation
 public class StreamlinkResolver {
     private final StreamingClient client;
     private final String stream;
     private final String filename;
+    private final Path outputBaseDir;
     private volatile Process currentProcess;
     private Path currentBasePath;
 
-    public StreamlinkResolver(StreamingClient client, String stream, String filename) {
+    public StreamlinkResolver(StreamingClient client, String stream, String filename, Path outputBaseDir) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.filename = Objects.requireNonNull(filename, "filename must not be null");
+        this.outputBaseDir = Objects.requireNonNull(outputBaseDir, "outputBaseDir must not be null");
     }
 
     private int runCommand(List<String> command) {
@@ -62,7 +62,7 @@ public class StreamlinkResolver {
         try {
             String baseName = (this.filename != null && !this.filename.isBlank()) ? this.filename : this.stream;
             Instant ts = Instant.now();
-            this.currentBasePath = FilenameUtil.buildBasePath(baseName, ts);
+            this.currentBasePath = FilenameUtil.buildBasePath(outputBaseDir, null, baseName, ts, null, false, false);
             String tsOutput = FilenameUtil.tsPath(currentBasePath).toString();
 
             int exitCode = runCommand(List.of(
