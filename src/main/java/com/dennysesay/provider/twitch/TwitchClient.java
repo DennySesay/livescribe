@@ -26,7 +26,7 @@ public class TwitchClient implements StreamingClient {
 
     @Override
     public String createUrl(String channel) {
-        return "https://twitch.tv/";
+        return "https://twitch.tv/" + channel;
     }
 
     private String getAuthToken() throws IOException, InterruptedException {
