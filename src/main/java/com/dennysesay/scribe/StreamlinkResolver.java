@@ -5,6 +5,7 @@ import com.dennysesay.provider.StreamingClient;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -16,14 +17,16 @@ public class StreamlinkResolver {
     private final String stream;
     private final String filename;
     private final Path outputBaseDir;
+    private final boolean deleteTs;
     private volatile Process currentProcess;
     private Path currentBasePath;
 
-    public StreamlinkResolver(StreamingClient client, String stream, String filename, Path outputBaseDir) {
+    public StreamlinkResolver(StreamingClient client, String stream, String filename, Path outputBaseDir, boolean deleteTs) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.filename = Objects.requireNonNull(filename, "filename must not be null");
         this.outputBaseDir = Objects.requireNonNull(outputBaseDir, "outputBaseDir must not be null");
+        this.deleteTs = deleteTs;
     }
 
     private int runCommand(List<String> command) {
@@ -73,7 +76,10 @@ public class StreamlinkResolver {
                     tsOutput
             ));
             if (exitCode == 0) {
-                convertToMp4();
+                boolean converted = convertToMp4();
+                if (converted && deleteTs) {
+                    deleteTsFile();
+                }
             }
         } catch (RuntimeException e) {
             if (e.getCause() instanceof InterruptedException) {
@@ -87,7 +93,7 @@ public class StreamlinkResolver {
         }
     }
 
-    public void convertToMp4() {
+    public boolean convertToMp4() {
         try {
             String tsInput = FilenameUtil.tsPath(Objects.requireNonNull(currentBasePath, "Output path not initialized")).toString();
             String mp4Output = FilenameUtil.mp4Path(currentBasePath).toString();
@@ -101,11 +107,12 @@ public class StreamlinkResolver {
             ));
 
             System.out.println("\nExited with code: " + exitCode);
+            return exitCode == 0;
         } catch (RuntimeException e) {
             if (e.getCause() instanceof InterruptedException) {
                 System.out.println("Stream conversion interrupted: " + stream);
                 Thread.currentThread().interrupt();
-                return;
+                return false;
             }
             throw e;
         }
@@ -137,7 +144,16 @@ public class StreamlinkResolver {
     }
 
     public void deleteTsFile() {
-        // implement deletion if desired after successful conversion
-        // Files.deleteIfExists(Path.of(filename + ".ts"));
+        try {
+            Path tsPath = FilenameUtil.tsPath(Objects.requireNonNull(currentBasePath, "Output path not initialized"));
+            boolean deleted = Files.deleteIfExists(tsPath);
+            if (deleted) {
+                System.out.println("Deleted TS file: " + tsPath);
+            } else {
+                System.out.println("TS file not found for deletion: " + tsPath);
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to delete TS file: " + e.getMessage());
+        }
     }
 }

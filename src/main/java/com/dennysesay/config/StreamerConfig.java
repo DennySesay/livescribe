@@ -40,6 +40,19 @@ public class StreamerConfig {
         }
     }
 
+    public boolean getTsDeletion() {
+        String reader = configReader.get("scribe.delete-ts");
+
+        if (reader == null || reader.isBlank()) {
+            return true;
+        }
+        try {
+            return Boolean.parseBoolean(reader);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public List<StreamerDefinition> getStreamers() {
         return streamers;
     }
