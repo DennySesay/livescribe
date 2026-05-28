@@ -1,59 +1,59 @@
-package com.dennysesay.config;
+package com.dennysesay.livescribe.config;
 
-import com.dennysesay.provider.StreamingClient;
-import com.dennysesay.provider.twitch.TwitchClient;
+import com.dennysesay.livescribe.provider.StreamingClient;
+import com.dennysesay.livescribe.provider.twitch.TwitchClient;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class StreamerConfig {
-    private final ConfigReader configReader;
-    private final List<StreamerDefinition> streamers;
+public class AppConfig {
+    private final AppConfigReader configReader;
+    private final List<StreamerChannel> streamers;
     private final Map<String, StreamingClient> clientsByProvider;
 
-    public StreamerConfig() {
-        this.configReader = new ConfigReader();
+    public AppConfig() {
+        this.configReader = new AppConfigReader();
         this.streamers = parseStreamers();
         this.clientsByProvider = initializeClients();
     }
 
     public int getCheckIntervalSeconds() {
-        String reader = configReader.getOrDefault("check.interval.seconds", "30");
+        String configValue = configReader.getOrDefault("check.interval.seconds", "30");
         try {
-            return Integer.parseInt(reader);
+            return Integer.parseInt(configValue);
         } catch (NumberFormatException e) {
             return 30;
         }
     }
 
     public int getMaxConcurrentDownloads() {
-        String reader = configReader.get("downloads.max.concurrent");
-        if (reader == null || reader.isBlank()) {
+        String configValue = configReader.get("downloads.max.concurrent");
+        if (configValue == null || configValue.isBlank()) {
             return Math.max(1, streamers.size());
         }
         try {
-            return Integer.parseInt(reader);
+            return Integer.parseInt(configValue);
         } catch (NumberFormatException e) {
             return Math.max(1, streamers.size());
         }
     }
 
-    public boolean getTsDeletion() {
-        String reader = configReader.get("scribe.delete-ts");
+    public boolean isDeleteTsAfterConversionEnabled() {
+        String configValue = configReader.get("scribe.delete-ts");
 
-        if (reader == null || reader.isBlank()) {
+        if (configValue == null || configValue.isBlank()) {
             return true;
         }
         try {
-            return Boolean.parseBoolean(reader);
+            return Boolean.parseBoolean(configValue);
         } catch (Exception e) {
             return false;
         }
     }
 
-    public List<StreamerDefinition> getStreamers() {
+    public List<StreamerChannel> getStreamers() {
         return streamers;
     }
 
@@ -61,7 +61,7 @@ public class StreamerConfig {
         return clientsByProvider.get(provider);
     }
 
-    public List<StreamerDefinition> parseStreamers() {
+    private List<StreamerChannel> parseStreamers() {
         String streamersValue = configReader.get("streamers");
         if (streamersValue == null || streamersValue.isBlank()) {
             throw new IllegalStateException("Missing or empty 'streamers' configuration");
@@ -84,21 +84,21 @@ public class StreamerConfig {
                             "scribe.output.path." + provider,
                             configReader.getOrDefault("scribe.output.path", "./scribe")
                     );
-                    return new StreamerDefinition(provider, channel, path);
+                    return new StreamerChannel(provider, channel, path);
                 })
                 .toList();
     }
 
     private Map<String, StreamingClient> initializeClients() {
         return streamers.stream()
-                .map(StreamerDefinition::provider)
+                .map(StreamerChannel::provider)
                 .distinct()
                 .collect(Collectors.toMap(
                         provider -> provider,
                         provider -> switch (provider) {
                             case "twitch" -> new TwitchClient(
-                                    Secrets.twitchClientId(configReader),
-                                    Secrets.twitchClientSecret(configReader)
+                                    SecretsManager.getTwitchClientId(configReader),
+                                    SecretsManager.getTwitchClientSecret(configReader)
                             );
                             default -> throw new IllegalArgumentException("Unexpected value: " + provider);
                         }

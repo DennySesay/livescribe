@@ -1,15 +1,14 @@
-package com.dennysesay.app;
+package com.dennysesay.livescribe;
 
-import com.dennysesay.config.StreamerConfig;
-import com.dennysesay.scribe.StreamMonitor;
+import com.dennysesay.livescribe.config.AppConfig;
+import com.dennysesay.livescribe.scribe.StreamMonitor;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 
-public class Main {
+public class LiveScribeApp {
     public static void main(String[] args) throws IOException {
-
-        StreamerConfig config = new StreamerConfig();
+        AppConfig config = new AppConfig();
         StreamMonitor monitor = new StreamMonitor(config);
 
         monitor.start();
@@ -28,5 +27,4 @@ public class Main {
             Thread.currentThread().interrupt();
         }
     }
-
 }

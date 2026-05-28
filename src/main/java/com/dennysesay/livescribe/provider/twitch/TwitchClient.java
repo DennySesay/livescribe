@@ -1,6 +1,6 @@
-package com.dennysesay.provider.twitch;
+package com.dennysesay.livescribe.provider.twitch;
 
-import com.dennysesay.provider.StreamingClient;
+import com.dennysesay.livescribe.provider.StreamingClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -13,20 +13,21 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 
 public class TwitchClient implements StreamingClient {
-    String twitchId;
-    String twitchSecret;
+    private final String clientId;
+    private final String clientSecret;
+    private final ObjectMapper objectMapper;
+    private final HttpClient client;
 
-    final ObjectMapper objectMapper = new ObjectMapper();
-    final HttpClient client = HttpClient.newHttpClient();
-
-    public TwitchClient(String twitchId, String twitchSecret) {
-        this.twitchId = twitchId;
-        this.twitchSecret = twitchSecret;
+    public TwitchClient(String clientId, String clientSecret) {
+        this.clientId = clientId;
+        this.clientSecret = clientSecret;
+        this.objectMapper = new ObjectMapper();
+        this.client = HttpClient.newHttpClient();
     }
 
     @Override
-    public String createUrl(String channel) {
-        return "https://twitch.tv/" + channel;
+    public String createUrl(String channelName) {
+        return "https://twitch.tv/" + channelName;
     }
 
     private String getAuthToken() throws IOException, InterruptedException {
@@ -34,8 +35,8 @@ public class TwitchClient implements StreamingClient {
         String grantType = "client_credentials";
 
         String requestBody =
-                "client_id=" + URLEncoder.encode(twitchId, StandardCharsets.UTF_8)
-                + "&client_secret=" + URLEncoder.encode(twitchSecret, StandardCharsets.UTF_8)
+                "client_id=" + URLEncoder.encode(clientId, StandardCharsets.UTF_8)
+                + "&client_secret=" + URLEncoder.encode(clientSecret, StandardCharsets.UTF_8)
                 + "&grant_type=" + URLEncoder.encode(grantType, StandardCharsets.UTF_8);
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -61,14 +62,14 @@ public class TwitchClient implements StreamingClient {
     }
 
     @Override
-    public boolean isLive(String stream) throws IOException, InterruptedException {
+    public boolean isLive(String channelName) throws IOException, InterruptedException {
         URI streamUri = URI.create("https://api.twitch.tv/helix/streams?user_login=" +
-                URLEncoder.encode(stream, StandardCharsets.UTF_8));
+                URLEncoder.encode(channelName, StandardCharsets.UTF_8));
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(streamUri)
                 .header("Authorization", "Bearer " + getAuthToken())
-                .header("Client-Id", twitchId)
+                .header("Client-Id", clientId)
                 .GET()
                 .build();
 
@@ -82,7 +83,7 @@ public class TwitchClient implements StreamingClient {
         JsonNode dataNode = json.get("data");
 
         if (dataNode == null || !dataNode.isArray() || dataNode.isEmpty()) {
-            System.out.println("stream is not live");
+            System.out.println("Twitch channel '" + channelName + "' is offline");
             return false;
         }
 

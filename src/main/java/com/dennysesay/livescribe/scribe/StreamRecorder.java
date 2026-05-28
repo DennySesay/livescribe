@@ -1,6 +1,6 @@
-package com.dennysesay.scribe;
+package com.dennysesay.livescribe.scribe;
 
-import com.dennysesay.provider.StreamingClient;
+import com.dennysesay.livescribe.provider.StreamingClient;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,21 +12,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-public class StreamlinkResolver {
-    private final StreamingClient client;
-    private final String stream;
-    private final String filename;
-    private final Path outputBaseDir;
-    private final boolean deleteTs;
-    private volatile Process currentProcess;
-    private Path currentBasePath;
+public class StreamRecorder {
+    private final StreamingClient platformClient;
+    private final String channelName;
+    private final Path outputDir;
+    private final boolean deleteTsAfterConversion;
+    private volatile Process activeProcess;
+    private Path recordingBasePath;
 
-    public StreamlinkResolver(StreamingClient client, String stream, String filename, Path outputBaseDir, boolean deleteTs) {
-        this.client = Objects.requireNonNull(client, "client must not be null");
-        this.stream = Objects.requireNonNull(stream, "stream must not be null");
-        this.filename = Objects.requireNonNull(filename, "filename must not be null");
-        this.outputBaseDir = Objects.requireNonNull(outputBaseDir, "outputBaseDir must not be null");
-        this.deleteTs = deleteTs;
+    public StreamRecorder(StreamingClient platformClient, String channelName, Path outputDir, boolean deleteTsAfterConversion) {
+        this.platformClient = Objects.requireNonNull(platformClient, "platformClient must not be null");
+        this.channelName = Objects.requireNonNull(channelName, "channelName must not be null");
+        this.outputDir = Objects.requireNonNull(outputDir, "outputDir must not be null");
+        this.deleteTsAfterConversion = deleteTsAfterConversion;
     }
 
     private int runCommand(List<String> command) {
@@ -34,7 +32,7 @@ public class StreamlinkResolver {
         processBuilder.redirectErrorStream(true);
         try {
             Process process = processBuilder.start();
-            currentProcess = process;
+            activeProcess = process;
 
             try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
@@ -47,7 +45,7 @@ public class StreamlinkResolver {
             System.out.println("\nExited with code: " + exitCode);
             return exitCode;
         } catch (InterruptedException e) {
-            Process p = currentProcess;
+            Process p = activeProcess;
             if (p != null && p.isAlive()) {
                 System.out.println("Terminating subprocess: " + String.join(" ", command));
                 p.destroyForcibly();
@@ -57,33 +55,32 @@ public class StreamlinkResolver {
         } catch (IOException e) {
             throw new RuntimeException("Failed to start process: " + String.join(" ", command), e);
         } finally {
-            currentProcess = null;
+            activeProcess = null;
         }
     }
 
-    public void resolve() {
+    public void record() {
         try {
-            String baseName = (this.filename != null && !this.filename.isBlank()) ? this.filename : this.stream;
             Instant ts = Instant.now();
-            this.currentBasePath = FilenameUtil.buildBasePath(outputBaseDir, null, baseName, ts, null, false, false);
-            String tsOutput = FilenameUtil.tsPath(currentBasePath).toString();
+            this.recordingBasePath = RecordingPathResolver.resolveRecordingPath(outputDir, channelName, ts);
+            String tsOutput = RecordingPathResolver.resolveTsPath(recordingBasePath).toString();
 
             int exitCode = runCommand(List.of(
                     "streamlink",
-                    client.createUrl(stream),
+                    platformClient.createUrl(channelName),
                     "best",
                     "-o",
                     tsOutput
             ));
             if (exitCode == 0) {
                 boolean converted = convertToMp4();
-                if (converted && deleteTs) {
+                if (converted && deleteTsAfterConversion) {
                     deleteTsFile();
                 }
             }
         } catch (RuntimeException e) {
             if (e.getCause() instanceof InterruptedException) {
-                System.out.println("Stream download interrupted: " + stream);
+                System.out.println("Stream download interrupted: " + channelName);
                 Thread.currentThread().interrupt();
                 return;
             }
@@ -95,8 +92,8 @@ public class StreamlinkResolver {
 
     public boolean convertToMp4() {
         try {
-            String tsInput = FilenameUtil.tsPath(Objects.requireNonNull(currentBasePath, "Output path not initialized")).toString();
-            String mp4Output = FilenameUtil.mp4Path(currentBasePath).toString();
+            String tsInput = RecordingPathResolver.resolveTsPath(Objects.requireNonNull(recordingBasePath, "Output path not initialized")).toString();
+            String mp4Output = RecordingPathResolver.resolveMp4Path(recordingBasePath).toString();
 
             int exitCode = runCommand(List.of(
                     "ffmpeg",
@@ -106,11 +103,11 @@ public class StreamlinkResolver {
                     mp4Output
             ));
 
-            System.out.println("\nExited with code: " + exitCode);
+            System.out.println("\nConversion exited with code: " + exitCode);
             return exitCode == 0;
         } catch (RuntimeException e) {
             if (e.getCause() instanceof InterruptedException) {
-                System.out.println("Stream conversion interrupted: " + stream);
+                System.out.println("Stream conversion interrupted: " + channelName);
                 Thread.currentThread().interrupt();
                 return false;
             }
@@ -119,9 +116,9 @@ public class StreamlinkResolver {
     }
 
     public void cancel() {
-        Process p = currentProcess;
+        Process p = activeProcess;
         if (p != null) {
-            System.out.println("Cancelling active process for " + stream);
+            System.out.println("Cancelling active process for " + channelName);
             try {
                 p.getInputStream().close();
             } catch (IOException ignored) {}
@@ -145,7 +142,7 @@ public class StreamlinkResolver {
 
     public void deleteTsFile() {
         try {
-            Path tsPath = FilenameUtil.tsPath(Objects.requireNonNull(currentBasePath, "Output path not initialized"));
+            Path tsPath = RecordingPathResolver.resolveTsPath(Objects.requireNonNull(recordingBasePath, "Output path not initialized"));
             boolean deleted = Files.deleteIfExists(tsPath);
             if (deleted) {
                 System.out.println("Deleted TS file: " + tsPath);

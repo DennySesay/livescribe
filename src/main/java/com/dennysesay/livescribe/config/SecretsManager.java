@@ -1,7 +1,7 @@
-package com.dennysesay.config;
+package com.dennysesay.livescribe.config;
 
-public final class Secrets {
-    private Secrets() {}
+public final class SecretsManager {
+    private SecretsManager() {}
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
@@ -15,13 +15,13 @@ public final class Secrets {
         return value;
     }
 
-    public static String twitchClientId(ConfigReader config) {
-        String fromConfig = config.get("twitch.clientId");
+    public static String getTwitchClientId(AppConfigReader configReader) {
+        String fromConfig = configReader.get("twitch.clientId");
         return !isBlank(fromConfig) ? fromConfig : requireEnv("LIVESCRIBE_TWITCH_ID");
     }
 
-    public static String twitchClientSecret(ConfigReader config) {
-        String fromConfig = config.get("twitch.clientSecret");
+    public static String getTwitchClientSecret(AppConfigReader configReader) {
+        String fromConfig = configReader.get("twitch.clientSecret");
         return !isBlank(fromConfig) ? fromConfig : requireEnv("LIVESCRIBE_TWITCH_SECRET");
     }
 }

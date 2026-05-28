@@ -1,23 +1,35 @@
-package com.dennysesay.config;
+package com.dennysesay.livescribe.config;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
-public class ConfigReader {
+public class AppConfigReader {
     private final Properties properties = new Properties();
 
-    public ConfigReader() {
+    public AppConfigReader() {
         String resourcePath = "config.properties";
+
+        File localFile = new File(resourcePath);
+        if (localFile.exists() && localFile.isFile()) {
+            try (InputStream is = new FileInputStream(localFile)) {
+                properties.load(is);
+                return;
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to load configuration from local file: " + localFile.getAbsolutePath(), e);
+            }
+        }
 
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         if (cl == null) {
-            cl = ConfigReader.class.getClassLoader();
+            cl = AppConfigReader.class.getClassLoader();
         }
 
         try (InputStream is = cl.getResourceAsStream(resourcePath)) {
             if (is == null) {
-                throw new IllegalStateException("Configuration resource not found on classpath: " + resourcePath);
+                throw new IllegalStateException("Configuration resource not found on classpath or working directory: " + resourcePath);
             }
             properties.load(is);
         } catch (IOException e) {
