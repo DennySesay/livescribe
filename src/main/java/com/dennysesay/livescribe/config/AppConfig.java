@@ -82,8 +82,16 @@ public class AppConfig {
                     String channel = parts[1].trim();
                     String path = configReader.getOrDefault(
                             "scribe.output.path." + provider,
-                            configReader.getOrDefault("scribe.output.path", "./scribe")
+                            configReader.getOrDefault("scribe.output.path", "~/livescribe")
                     );
+                    if (path.startsWith("~")) {
+                        String home = System.getProperty("user.home");
+                        if (path.equals("~")) {
+                            path = home;
+                        } else if (path.startsWith("~/") || path.startsWith("~\\")) {
+                            path = home + path.substring(1);
+                        }
+                    }
                     return new StreamerChannel(provider, channel, path);
                 })
                 .toList();

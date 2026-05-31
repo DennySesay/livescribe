@@ -14,8 +14,9 @@ public class AppConfigReader {
 
         File localFile = new File(resourcePath);
         if (localFile.exists() && localFile.isFile()) {
-            try (InputStream is = new FileInputStream(localFile)) {
-                properties.load(is);
+            try (InputStream is = new FileInputStream(localFile);
+                 var reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+                properties.load(reader);
                 return;
             } catch (IOException e) {
                 throw new IllegalStateException("Failed to load configuration from local file: " + localFile.getAbsolutePath(), e);
@@ -31,7 +32,9 @@ public class AppConfigReader {
             if (is == null) {
                 throw new IllegalStateException("Configuration resource not found on classpath or working directory: " + resourcePath);
             }
-            properties.load(is);
+            try (var reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load configuration from classpath resource: " + resourcePath, e);
         }

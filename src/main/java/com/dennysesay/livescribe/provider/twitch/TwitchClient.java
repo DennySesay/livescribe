@@ -11,12 +11,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 
 public class TwitchClient implements StreamingClient {
     private final String clientId;
     private final String clientSecret;
     private final ObjectMapper objectMapper;
     private final HttpClient client;
+    private String cachedToken = null;
+    private Instant tokenExpiry = null;
 
     public TwitchClient(String clientId, String clientSecret) {
         this.clientId = clientId;
@@ -30,7 +33,11 @@ public class TwitchClient implements StreamingClient {
         return "https://twitch.tv/" + channelName;
     }
 
-    private String getAuthToken() throws IOException, InterruptedException {
+    private synchronized String getAuthToken() throws IOException, InterruptedException {
+        if (cachedToken != null && tokenExpiry != null && Instant.now().isBefore(tokenExpiry)) {
+            return cachedToken;
+        }
+
         URI tokenUri = URI.create("https://id.twitch.tv/oauth2/token");
         String grantType = "client_credentials";
 
@@ -58,7 +65,13 @@ public class TwitchClient implements StreamingClient {
             throw new IOException("Twitch token response did not contain a valid access_token: " + response.body());
         }
 
-        return accessTokenNode.asString();
+        cachedToken = accessTokenNode.asString();
+        JsonNode expiresInNode = json.get("expires_in");
+        long expiresInSeconds = expiresInNode != null ? expiresInNode.asLong() : 3600L;
+        // Expire token 1 minute early for safety buffer
+        tokenExpiry = Instant.now().plusSeconds(expiresInSeconds - 60);
+
+        return cachedToken;
     }
 
     @Override
@@ -83,7 +96,6 @@ public class TwitchClient implements StreamingClient {
         JsonNode dataNode = json.get("data");
 
         if (dataNode == null || !dataNode.isArray() || dataNode.isEmpty()) {
-            System.out.println("Twitch channel '" + channelName + "' is offline");
             return false;
         }
 

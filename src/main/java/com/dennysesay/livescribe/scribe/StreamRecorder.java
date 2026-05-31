@@ -2,9 +2,7 @@ package com.dennysesay.livescribe.scribe;
 
 import com.dennysesay.livescribe.provider.StreamingClient;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -17,37 +15,66 @@ public class StreamRecorder {
     private final String channelName;
     private final Path outputDir;
     private final boolean deleteTsAfterConversion;
+    private final StreamerStatus status;
     private volatile Process activeProcess;
     private Path recordingBasePath;
 
-    public StreamRecorder(StreamingClient platformClient, String channelName, Path outputDir, boolean deleteTsAfterConversion) {
+    public StreamRecorder(StreamingClient platformClient, String channelName, Path outputDir, boolean deleteTsAfterConversion, StreamerStatus status) {
         this.platformClient = Objects.requireNonNull(platformClient, "platformClient must not be null");
         this.channelName = Objects.requireNonNull(channelName, "channelName must not be null");
         this.outputDir = Objects.requireNonNull(outputDir, "outputDir must not be null");
         this.deleteTsAfterConversion = deleteTsAfterConversion;
+        this.status = Objects.requireNonNull(status, "status must not be null");
+    }
+
+    private Path getLogPath() {
+        try {
+            Path logsDir = Path.of("logs");
+            if (!Files.exists(logsDir)) {
+                Files.createDirectories(logsDir);
+            }
+            return logsDir.resolve(channelName + ".log");
+        } catch (IOException e) {
+            return Path.of(channelName + ".log");
+        }
+    }
+
+    private void logMessage(String message) {
+        try {
+            Path logFile = getLogPath();
+            Files.writeString(logFile, "[" + Instant.now() + "] " + message + "\n", 
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException ignored) {}
     }
 
     private int runCommand(List<String> command) {
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         processBuilder.redirectErrorStream(true);
+        
+        Path logFile = getLogPath();
+        processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+
+        try {
+            Files.writeString(logFile, "\n--- Starting command at " + Instant.now() + " ---\nCommand: " + String.join(" ", command) + "\n", 
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException ignored) {}
+
         try {
             Process process = processBuilder.start();
             activeProcess = process;
 
-            try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
-                }
-            }
-
             int exitCode = process.waitFor();
-            System.out.println("\nExited with code: " + exitCode);
+            
+            try {
+                Files.writeString(logFile, "--- Command exited with code: " + exitCode + " ---\n", 
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            } catch (IOException ignored) {}
+
             return exitCode;
         } catch (InterruptedException e) {
             Process p = activeProcess;
             if (p != null && p.isAlive()) {
-                System.out.println("Terminating subprocess: " + String.join(" ", command));
+                logMessage("Terminating subprocess forcibly: " + String.join(" ", command));
                 p.destroyForcibly();
             }
             Thread.currentThread().interrupt();
@@ -63,7 +90,14 @@ public class StreamRecorder {
         try {
             Instant ts = Instant.now();
             this.recordingBasePath = RecordingPathResolver.resolveRecordingPath(outputDir, channelName, ts);
-            String tsOutput = RecordingPathResolver.resolveTsPath(recordingBasePath).toString();
+            Path tsPath = RecordingPathResolver.resolveTsPath(recordingBasePath);
+            String tsOutput = tsPath.toString();
+
+            status.setState(ChannelState.RECORDING);
+            status.setRecordStartTime(Instant.now());
+            status.setActiveFilePath(tsPath);
+
+            logMessage("Starting download for " + channelName);
 
             int exitCode = runCommand(List.of(
                     "streamlink",
@@ -72,20 +106,41 @@ public class StreamRecorder {
                     "-o",
                     tsOutput
             ));
+            
             if (exitCode == 0) {
+                status.setState(ChannelState.CONVERTING);
+                Path mp4Path = RecordingPathResolver.resolveMp4Path(recordingBasePath);
+                status.setActiveFilePath(mp4Path);
+                
+                logMessage("Converting download for " + channelName + " to MP4");
                 boolean converted = convertToMp4();
-                if (converted && deleteTsAfterConversion) {
-                    deleteTsFile();
+                
+                if (converted) {
+                    status.setState(ChannelState.FINISHED);
+                    logMessage("Successfully finished and converted recording for " + channelName);
+                    if (deleteTsAfterConversion) {
+                        deleteTsFile();
+                    }
+                } else {
+                    status.setState(ChannelState.ERROR);
+                    logMessage("Failed to convert TS to MP4 for " + channelName);
                 }
+            } else {
+                status.setState(ChannelState.ERROR);
+                logMessage("Streamlink exited with code " + exitCode + " for " + channelName);
             }
         } catch (RuntimeException e) {
+            status.setState(ChannelState.ERROR);
             if (e.getCause() instanceof InterruptedException) {
-                System.out.println("Stream download interrupted: " + channelName);
+                logMessage("Stream download interrupted: " + channelName);
                 Thread.currentThread().interrupt();
                 return;
             }
+            logMessage("Runtime error during recording for " + channelName + ": " + e.getMessage());
             throw e;
         } catch (IOException e) {
+            status.setState(ChannelState.ERROR);
+            logMessage("IO error preparing output path for " + channelName + ": " + e.getMessage());
             throw new RuntimeException("Failed to prepare output path", e);
         }
     }
@@ -103,11 +158,11 @@ public class StreamRecorder {
                     mp4Output
             ));
 
-            System.out.println("\nConversion exited with code: " + exitCode);
+            logMessage("Conversion exited with code: " + exitCode);
             return exitCode == 0;
         } catch (RuntimeException e) {
             if (e.getCause() instanceof InterruptedException) {
-                System.out.println("Stream conversion interrupted: " + channelName);
+                logMessage("Stream conversion interrupted: " + channelName);
                 Thread.currentThread().interrupt();
                 return false;
             }
@@ -118,7 +173,7 @@ public class StreamRecorder {
     public void cancel() {
         Process p = activeProcess;
         if (p != null) {
-            System.out.println("Cancelling active process for " + channelName);
+            logMessage("Cancelling active process for " + channelName);
             try {
                 p.getInputStream().close();
             } catch (IOException ignored) {}
@@ -145,12 +200,12 @@ public class StreamRecorder {
             Path tsPath = RecordingPathResolver.resolveTsPath(Objects.requireNonNull(recordingBasePath, "Output path not initialized"));
             boolean deleted = Files.deleteIfExists(tsPath);
             if (deleted) {
-                System.out.println("Deleted TS file: " + tsPath);
+                logMessage("Deleted TS file: " + tsPath);
             } else {
-                System.out.println("TS file not found for deletion: " + tsPath);
+                logMessage("TS file not found for deletion: " + tsPath);
             }
         } catch (IOException e) {
-            System.err.println("Failed to delete TS file: " + e.getMessage());
+            logMessage("Failed to delete TS file: " + e.getMessage());
         }
     }
 }

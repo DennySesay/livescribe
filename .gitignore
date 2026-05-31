@@ -40,3 +40,4 @@ build/
 
 # User Configuration #
 config.properties
+/src/main/resources/config.properties
