@@ -73,10 +73,64 @@ public class LiveScribeCommand implements Callable<Integer> {
                 keepAlive.countDown();
             }, "shutdown-hook"));
 
-            try {
-                keepAlive.await();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+                while (keepAlive.getCount() > 0) {
+                    String initialLine = reader.readLine();
+                    if (initialLine == null) {
+                        // Standard input is closed or not available (e.g. running in background without stdin redirect)
+                        // Fall back to keeping the process alive with keepAlive.await()
+                        keepAlive.await();
+                        break;
+                    }
+
+                    monitor.pauseUIRendering();
+                    initialLine = initialLine.trim();
+
+                    if (initialLine.equalsIgnoreCase("exit")) {
+                        monitor.stop();
+                        System.exit(0);
+                    } else if (initialLine.equalsIgnoreCase("resume-ui")) {
+                        monitor.resumeUIRendering();
+                        continue;
+                    } else if (!initialLine.isEmpty()) {
+                        String result = monitor.executeCommand(initialLine);
+                        System.out.println(result);
+                    }
+
+                    System.out.println("\n=== LiveScribe Command Mode ===");
+                    System.out.println("Type commands (e.g. status, pause, resume, etc.)");
+                    System.out.println("Type 'resume-ui' or press Enter on an empty line to resume the monitor UI.");
+
+                    boolean resume = false;
+                    while (!resume && keepAlive.getCount() > 0) {
+                        System.out.print("> ");
+                        System.out.flush();
+                        String cmd = reader.readLine();
+                        if (cmd == null) {
+                            resume = true;
+                            break;
+                        }
+                        cmd = cmd.trim();
+                        if (cmd.isEmpty() || cmd.equalsIgnoreCase("resume-ui")) {
+                            System.out.println("Resuming monitor UI...");
+                            monitor.resumeUIRendering();
+                            resume = true;
+                        } else if (cmd.equalsIgnoreCase("exit")) {
+                            monitor.stop();
+                            System.exit(0);
+                        } else {
+                            String result = monitor.executeCommand(cmd);
+                            System.out.println(result);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // If there's an exception reading System.in, fall back to await
+                try {
+                    keepAlive.await();
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
             }
             return 0;
         }
