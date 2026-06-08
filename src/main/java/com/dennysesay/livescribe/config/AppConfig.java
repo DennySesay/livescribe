@@ -1,7 +1,9 @@
 package com.dennysesay.livescribe.config;
 
 import com.dennysesay.livescribe.provider.StreamingClient;
+import com.dennysesay.livescribe.provider.naver.NaverClient;
 import com.dennysesay.livescribe.provider.twitch.TwitchClient;
+import com.dennysesay.livescribe.provider.kick.KickClient;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +14,7 @@ public class AppConfig {
     private final AppConfigReader configReader;
     private final List<StreamerChannel> streamers;
     private final Map<String, StreamingClient> clientsByProvider;
+    private final Map<String, String> runtimeOverrides = new java.util.concurrent.ConcurrentHashMap<>();
 
     public AppConfig() {
         this.configReader = new AppConfigReader();
@@ -19,8 +22,26 @@ public class AppConfig {
         this.clientsByProvider = initializeClients();
     }
 
+    public void setRuntimeOverride(String key, String value) {
+        runtimeOverrides.put(key, value);
+    }
+
+    public String getProperty(String key) {
+        if (runtimeOverrides.containsKey(key)) {
+            return runtimeOverrides.get(key);
+        }
+        return configReader.get(key);
+    }
+
+    public String getPropertyOrDefault(String key, String defaultValue) {
+        if (runtimeOverrides.containsKey(key)) {
+            return runtimeOverrides.get(key);
+        }
+        return configReader.getOrDefault(key, defaultValue);
+    }
+
     public int getCheckIntervalSeconds() {
-        String configValue = configReader.getOrDefault("check.interval.seconds", "30");
+        String configValue = getPropertyOrDefault("check.interval.seconds", "30");
         try {
             return Integer.parseInt(configValue);
         } catch (NumberFormatException e) {
@@ -29,7 +50,7 @@ public class AppConfig {
     }
 
     public int getMaxConcurrentDownloads() {
-        String configValue = configReader.get("downloads.max.concurrent");
+        String configValue = getProperty("downloads.max.concurrent");
         if (configValue == null || configValue.isBlank()) {
             return Math.max(1, streamers.size());
         }
@@ -41,7 +62,7 @@ public class AppConfig {
     }
 
     public boolean isDeleteTsAfterConversionEnabled() {
-        String configValue = configReader.get("scribe.delete-ts");
+        String configValue = getProperty("scribe.delete-ts");
 
         if (configValue == null || configValue.isBlank()) {
             return true;
@@ -108,6 +129,11 @@ public class AppConfig {
                                     SecretsManager.getTwitchClientId(configReader),
                                     SecretsManager.getTwitchClientSecret(configReader)
                             );
+                            case "kick" -> new KickClient(
+                                    SecretsManager.getKickClientId(configReader),
+                                    SecretsManager.getKickClientSecret(configReader)
+                            );
+                            case "naver" -> new NaverClient();
                             default -> throw new IllegalArgumentException("Unexpected value: " + provider);
                         }
                 ));
