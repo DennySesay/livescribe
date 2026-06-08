@@ -31,6 +31,7 @@ public class StreamMonitor {
     private final Map<StreamerChannel, StreamRecorder> activeRecorders = new ConcurrentHashMap<>();
     private final Map<StreamerChannel, AtomicBoolean> activeRecordings = new ConcurrentHashMap<>();
     private final AtomicBoolean stopping = new AtomicBoolean(false);
+    private final AtomicBoolean renderPaused = new AtomicBoolean(false);
     private ExecutorService downloadExecutor;
     private ControlServer controlServer;
     private Thread controlServerThread;
@@ -262,7 +263,7 @@ public class StreamMonitor {
     }
 
     private void render() {
-        if (stopping.get()) {
+        if (stopping.get() || renderPaused.get()) {
             return;
         }
 
@@ -620,6 +621,121 @@ public class StreamMonitor {
         }
     }
 
+    public void pauseUIRendering() {
+        renderPaused.set(true);
+        clearConsole();
+    }
+
+    public void resumeUIRendering() {
+        renderPaused.set(false);
+        clearConsole();
+    }
+
+    public String executeCommand(String line) {
+        if (line == null || line.isBlank()) {
+            return "Error: Empty command";
+        }
+
+        String[] parts = line.split(" ", 2);
+        String command = parts[0].trim().toLowerCase();
+        String argument = parts.length > 1 ? parts[1].trim() : "";
+
+        return switch (command) {
+            case "add" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: streamer definition required (e.g. twitch:channelName, chzzk:channelName)";
+                } else {
+                    yield handleAddCommand(argument);
+                }
+            }
+            case "pause" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name required";
+                } else {
+                    yield handlePauseCommand(argument);
+                }
+            }
+            case "resume" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name required";
+                } else {
+                    yield handleResumeCommand(argument);
+                }
+            }
+            case "status" -> handleStatusCommand();
+            case "set" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: key and value required (e.g. set check.interval.seconds 15)";
+                } else {
+                    String[] parts2 = argument.split(" ", 2);
+                    if (parts2.length < 2) {
+                        yield "Error: value required";
+                    } else {
+                        yield handleSet(parts2[0].trim(), parts2[1].trim());
+                    }
+                }
+            }
+            case "get" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: key required (e.g. get check.interval.seconds)";
+                } else {
+                    yield handleGet(argument);
+                }
+            }
+            case "force-record" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name required";
+                } else {
+                    yield handleForceRecord(argument);
+                }
+            }
+            case "stop" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name required";
+                } else {
+                    yield handleStop(argument);
+                }
+            }
+            case "state" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name and state required (e.g. state dougdoug ERROR)";
+                } else {
+                    String[] parts2 = argument.split(" ", 2);
+                    if (parts2.length < 2) {
+                        yield "Error: state required";
+                    } else {
+                        yield handleStateChange(parts2[0].trim(), parts2[1].trim());
+                    }
+                }
+            }
+            case "quality" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name and quality required (e.g. quality dougdoug 720p60)";
+                } else {
+                    String[] parts2 = argument.split(" ", 2);
+                    if (parts2.length < 2) {
+                        yield "Error: quality required";
+                    } else {
+                        yield handleQuality(parts2[0].trim(), parts2[1].trim());
+                    }
+                }
+            }
+            case "args" -> {
+                if (argument.isEmpty()) {
+                    yield "Error: channel name and custom arguments required (e.g. args dougdoug --twitch-low-latency)";
+                } else {
+                    String[] parts2 = argument.split(" ", 2);
+                    if (parts2.length < 2) {
+                        yield "Error: custom arguments required";
+                    } else {
+                        yield handleArgs(parts2[0].trim(), parts2[1].trim());
+                    }
+                }
+            }
+            default -> "Unknown command: " + command;
+        };
+    }
+
     private class ControlServer implements Runnable {
         private final ServerSocket serverSocket;
         private final AtomicBoolean running = new AtomicBoolean(true);
@@ -645,117 +761,8 @@ public class StreamMonitor {
                     String line = reader.readLine();
                     if (line == null) continue;
 
-                    String[] parts = line.split(" ", 2);
-                    String command = parts[0].trim().toLowerCase();
-                    String argument = parts.length > 1 ? parts[1].trim() : "";
-
-                    switch (command) {
-                        case "add" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: streamer definition required (e.g. twitch:channelName, naver:channelName)");
-                            } else {
-                                String result = handleAddCommand(argument);
-                                writer.println(result);
-                            }
-                        }
-                        case "pause" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name required");
-                            } else {
-                                String result = handlePauseCommand(argument);
-                                writer.println(result);
-                            }
-                        }
-                        case "resume" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name required");
-                            } else {
-                                String result = handleResumeCommand(argument);
-                                writer.println(result);
-                            }
-                        }
-                        case "status" -> {
-                            String result = handleStatusCommand();
-                            writer.println(result);
-                        }
-                        case "set" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: key and value required (e.g. set check.interval.seconds 15)");
-                            } else {
-                                String[] parts2 = argument.split(" ", 2);
-                                if (parts2.length < 2) {
-                                    writer.println("Error: value required");
-                                } else {
-                                    String result = handleSet(parts2[0].trim(), parts2[1].trim());
-                                    writer.println(result);
-                                }
-                            }
-                        }
-                        case "get" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: key required (e.g. get check.interval.seconds)");
-                            } else {
-                                String result = handleGet(argument);
-                                writer.println(result);
-                            }
-                        }
-                        case "force-record" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name required");
-                            } else {
-                                String result = handleForceRecord(argument);
-                                writer.println(result);
-                            }
-                        }
-                        case "stop" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name required");
-                            } else {
-                                String result = handleStop(argument);
-                                writer.println(result);
-                            }
-                        }
-                        case "state" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name and state required (e.g. state dougdoug ERROR)");
-                            } else {
-                                String[] parts2 = argument.split(" ", 2);
-                                if (parts2.length < 2) {
-                                    writer.println("Error: state required");
-                                } else {
-                                    String result = handleStateChange(parts2[0].trim(), parts2[1].trim());
-                                    writer.println(result);
-                                }
-                            }
-                        }
-                        case "quality" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name and quality required (e.g. quality dougdoug 720p60)");
-                            } else {
-                                String[] parts2 = argument.split(" ", 2);
-                                if (parts2.length < 2) {
-                                    writer.println("Error: quality required");
-                                } else {
-                                    String result = handleQuality(parts2[0].trim(), parts2[1].trim());
-                                    writer.println(result);
-                                }
-                            }
-                        }
-                        case "args" -> {
-                            if (argument.isEmpty()) {
-                                writer.println("Error: channel name and custom arguments required (e.g. args dougdoug --twitch-low-latency)");
-                            } else {
-                                String[] parts2 = argument.split(" ", 2);
-                                if (parts2.length < 2) {
-                                    writer.println("Error: custom arguments required");
-                                } else {
-                                    String result = handleArgs(parts2[0].trim(), parts2[1].trim());
-                                    writer.println(result);
-                                }
-                            }
-                        }
-                        default -> writer.println("Unknown command: " + command);
-                    }
+                    String result = executeCommand(line.trim());
+                    writer.println(result);
                 } catch (IOException e) {
                     if (!running.get()) {
                         break;
