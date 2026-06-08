@@ -6,6 +6,7 @@ public enum ChannelState {
     OFFLINE("Offline"),
     LIVE("Live"),
     RECORDING("Recording"),
+    PAUSED("Paused"),
     CONVERTING("Converting"),
     FINISHED("Finished"),
     ERROR("Error");
