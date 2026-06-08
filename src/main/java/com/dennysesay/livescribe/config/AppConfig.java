@@ -1,7 +1,7 @@
 package com.dennysesay.livescribe.config;
 
 import com.dennysesay.livescribe.provider.StreamingClient;
-import com.dennysesay.livescribe.provider.naver.NaverClient;
+import com.dennysesay.livescribe.provider.chzzk.ChzzkClient;
 import com.dennysesay.livescribe.provider.twitch.TwitchClient;
 import com.dennysesay.livescribe.provider.kick.KickClient;
 
@@ -133,7 +133,7 @@ public class AppConfig {
                                     SecretsManager.getKickClientId(configReader),
                                     SecretsManager.getKickClientSecret(configReader)
                             );
-                            case "naver" -> new NaverClient();
+                            case "chzzk" -> new ChzzkClient();
                             default -> throw new IllegalArgumentException("Unexpected value: " + provider);
                         }
                 ));
