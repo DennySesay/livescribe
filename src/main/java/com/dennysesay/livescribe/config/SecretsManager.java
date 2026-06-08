@@ -24,4 +24,14 @@ public final class SecretsManager {
         String fromConfig = configReader.get("twitch.clientSecret");
         return !isBlank(fromConfig) ? fromConfig : requireEnv("LIVESCRIBE_TWITCH_SECRET");
     }
+
+    public static String getKickClientId(AppConfigReader configReader) {
+        String fromConfig = configReader.get("kick.clientId");
+        return !isBlank(fromConfig) ? fromConfig : requireEnv("LIVESCRIBE_KICK_ID");
+    }
+
+    public static String getKickClientSecret(AppConfigReader configReader) {
+        String fromConfig = configReader.get("kick.clientSecret");
+        return !isBlank(fromConfig) ? fromConfig : requireEnv("LIVESCRIBE_KICK_SECRET");
+    }
 }
