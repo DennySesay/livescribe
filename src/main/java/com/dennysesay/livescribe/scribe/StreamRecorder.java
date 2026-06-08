@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class StreamRecorder {
     private final StreamingClient platformClient;
@@ -18,13 +19,43 @@ public class StreamRecorder {
     private final StreamerStatus status;
     private volatile Process activeProcess;
     private Path recordingBasePath;
+    private final AtomicBoolean paused = new AtomicBoolean(false);
+    private final String quality;
+    private final String customArgs;
+
+    public void pause() {
+        if (paused.compareAndSet(false, true)) {
+            logMessage("Recording paused for " + channelName);
+            status.setState(ChannelState.PAUSED);
+        }
+    }
+
+    public void resume() {
+        if (paused.compareAndSet(true, false)) {
+            logMessage("Recording resumed for " + channelName);
+            status.setState(ChannelState.RECORDING);
+            synchronized (paused) {
+                paused.notifyAll();
+            }
+        }
+    }
+
+    public boolean isPaused() {
+        return paused.get();
+    }
 
     public StreamRecorder(StreamingClient platformClient, String channelName, Path outputDir, boolean deleteTsAfterConversion, StreamerStatus status) {
+        this(platformClient, channelName, outputDir, deleteTsAfterConversion, status, "best", "");
+    }
+
+    public StreamRecorder(StreamingClient platformClient, String channelName, Path outputDir, boolean deleteTsAfterConversion, StreamerStatus status, String quality, String customArgs) {
         this.platformClient = Objects.requireNonNull(platformClient, "platformClient must not be null");
         this.channelName = Objects.requireNonNull(channelName, "channelName must not be null");
         this.outputDir = Objects.requireNonNull(outputDir, "outputDir must not be null");
         this.deleteTsAfterConversion = deleteTsAfterConversion;
         this.status = Objects.requireNonNull(status, "status must not be null");
+        this.quality = quality != null ? quality : "best";
+        this.customArgs = customArgs != null ? customArgs : "";
     }
 
     private Path getLogPath() {
@@ -91,7 +122,6 @@ public class StreamRecorder {
             Instant ts = Instant.now();
             this.recordingBasePath = RecordingPathResolver.resolveRecordingPath(outputDir, channelName, ts);
             Path tsPath = RecordingPathResolver.resolveTsPath(recordingBasePath);
-            String tsOutput = tsPath.toString();
 
             status.setState(ChannelState.RECORDING);
             status.setRecordStartTime(Instant.now());
@@ -99,22 +129,90 @@ public class StreamRecorder {
 
             logMessage("Starting download for " + channelName);
 
-            int exitCode = runCommand(List.of(
-                    "streamlink",
-                    platformClient.createUrl(channelName),
-                    "best",
-                    "-o",
-                    tsOutput
-            ));
-            
+            // We use "-" for streamlink to output to stdout
+            List<String> command = new java.util.ArrayList<>();
+            command.add("streamlink");
+            command.add(platformClient.createUrl(channelName));
+            command.add(quality);
+            command.add("-o");
+            command.add("-");
+            if (customArgs != null && !customArgs.isBlank()) {
+                String[] parts = customArgs.trim().split("\\s+");
+                for (String part : parts) {
+                    if (!part.isEmpty()) {
+                        command.add(part);
+                    }
+                }
+            }
+
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            // Redirect stderr to log file so streamlink logs are saved
+            Path logFile = getLogPath();
+            processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+
+            try {
+                Files.writeString(logFile, "\n--- Starting streamlink at " + Instant.now() + " ---\nCommand: " + String.join(" ", command) + "\n",
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            } catch (IOException ignored) {}
+
+            int exitCode = -1;
+            Process process = null;
+            try {
+                // Ensure output directory exists
+                Files.createDirectories(tsPath.getParent());
+
+                process = processBuilder.start();
+                activeProcess = process;
+
+                // Read from process.getInputStream() and write to tsPath
+                try (var inputStream = process.getInputStream();
+                     var outputStream = Files.newOutputStream(tsPath)) {
+
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        // Check if paused
+                        while (paused.get()) {
+                            synchronized (paused) {
+                                paused.wait(500);
+                            }
+                            // Check if process has exited while we were paused
+                            if (!process.isAlive() && inputStream.available() == 0) {
+                                break;
+                            }
+                        }
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                }
+
+                exitCode = process.waitFor();
+
+                try {
+                    Files.writeString(logFile, "--- Streamlink exited with code: " + exitCode + " ---\n",
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                } catch (IOException ignored) {}
+
+            } catch (InterruptedException e) {
+                if (process != null && process.isAlive()) {
+                    logMessage("Terminating streamlink forcibly: " + channelName);
+                    process.destroyForcibly();
+                }
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Streamlink process was interrupted", e);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to download stream: " + channelName, e);
+            } finally {
+                activeProcess = null;
+            }
+
             if (exitCode == 0) {
                 status.setState(ChannelState.CONVERTING);
                 Path mp4Path = RecordingPathResolver.resolveMp4Path(recordingBasePath);
                 status.setActiveFilePath(mp4Path);
-                
+
                 logMessage("Converting download for " + channelName + " to MP4");
                 boolean converted = convertToMp4();
-                
+
                 if (converted) {
                     status.setState(ChannelState.FINISHED);
                     logMessage("Successfully finished and converted recording for " + channelName);
