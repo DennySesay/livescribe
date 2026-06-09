@@ -280,7 +280,7 @@ public class StreamMonitor {
         System.out.print("\u001B[H");
 
         System.out.println(BOLD + "=== Livescribe Stream Monitor ===" + RESET);
-        System.out.println("Press Ctrl+C to stop.\n");
+        System.out.println("Press Ctrl+C to stop, or Enter to execute commands.\n");
 
         List<StreamerChannel> streamers = statuses.keySet().stream()
                 .sorted((a, b) -> a.channelName().compareToIgnoreCase(b.channelName()))
